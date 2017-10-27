@@ -1,3 +1,4 @@
+import coverage
 import logging
 from target import json_target
 from pathlib import Path
@@ -7,25 +8,50 @@ import hashlib
 import time
 import sys
 
-class Tracer:
+class ShouldTrace:
+    trace = True
+
+    def __init__(self, filename):
+        self.source_filename = filename
+
+# CTracer ?
+class Tracer(coverage.PyTracer):
     """Handles getting coverage."""
 
-    def clear(self):
-        self.edges = defaultdict(set)
+    def __init__(self):
+        super().__init__()
+        self.trace_arcs = True
+        # TODO: see how coverage.py does this
+        def should_trace(filename, frame):
+            res = ShouldTrace(filename)
+            if filename == 'fuzzer.py':
+                res.trace = False
+            return res
+        self.data = {}
+        self.trace = None
+        self.should_trace = should_trace
+        self.should_trace_cache = {}
+
+    @property
+    def edges(self):
+        return self.data
+
+#     def clear(self):
+#         self.edges = defaultdict(set)
 
     # TODO: actually do edge coverage by file;
     # this is only blocks right now.
-    def _trace(self, frame, event, arg):
-        filename = frame.f_code.co_filename
-        if filename != 'fuzzer.py':
-            self.edges[filename].add(frame.f_lineno)
-        return self._trace
+    # def _trace(self, frame, event, arg):
+    #     filename = frame.f_code.co_filename
+    #     if filename != 'fuzzer.py':
+    #         self.edges[filename].add(frame.f_lineno)
+    #     return self._trace
 
-    def start(self):
-        sys.settrace(self._trace)
+    # def start(self):
+    #     sys.settrace(self._trace)
 
-    def stop(self):
-        sys.settrace(None)
+    # def stop(self):
+    #     sys.settrace(None)
 
 class Fuzzer:
     """
@@ -38,7 +64,7 @@ class Fuzzer:
         self.corpus_dir = corpus_dir
         # filename -> edges
         self.edges = defaultdict(set)
-        self.tracer = Tracer()
+        # self.cov = coverage.Coverage(cover_pylib=self.cover_stdlib, branch=True)
         to_import = list(corpus_dir.iterdir())
         for path in to_import:
             self.import_testcase(path)
@@ -56,12 +82,14 @@ class Fuzzer:
     def test_one_input(self, data):
         # TODO: handle exceptions
         # TODO: reuse coverage object, clearing it
-        self.tracer.clear()
-        self.tracer.start()
+        tracer = Tracer()
+        tracer.start()
         self.target(data)
-        self.tracer.stop()
+        tracer.stop()
         has_new = False
-        for name, edges in self.tracer.edges.items():
+        for name, edges in tracer.edges.items():
+            if edges is None:
+                continue
             edges = set(edges)
             if edges - self.edges[name]:
                 has_new = True
@@ -150,17 +178,17 @@ class Fuzzer:
                 assert False
         return bytes(data)
 
-    def print_status(self, num_execs, start):
+    def print_status(self, info, num_execs, start):
         elapsed = max(int(time.time() - start), 1)
         exec_s = num_execs // elapsed
         cov = sum(len(edges) for edges in self.edges.values())
-        print("#{} pulse {} cov {} exec/s".format(num_execs, cov, exec_s))
+        print("#{} {} cov: {} corpus: {} exec/s: {}".format(num_execs, info, cov, len(self.corpus), exec_s))
+
+    def print_pulse(self, num_execs, start):
+        self.print_status("pulse", num_execs, start)
 
     def print_new(self, num_execs, start):
-        elapsed = max(int(time.time() - start), 1)
-        exec_s = num_execs // elapsed
-        cov = sum(len(edges) for edges in self.edges.values())
-        print("#{} NEW {} cov {} exec/s".format(num_execs, cov, exec_s))
+        self.print_status("NEW", num_execs, start)
 
     def fuzz(self):
         num_execs = 0
@@ -171,7 +199,7 @@ class Fuzzer:
             if has_new:
                 self.print_new(num_execs, start)
             elif bin(num_execs).count("1") == 1:
-                self.print_status(num_execs, start)
+                self.print_pulse(num_execs, start)
             num_execs += 1
 
 if __name__ == '__main__':
