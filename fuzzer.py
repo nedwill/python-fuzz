@@ -1,4 +1,3 @@
-import coverage
 import logging
 from target import json_target
 from pathlib import Path
@@ -6,6 +5,27 @@ from collections import defaultdict
 import random
 import hashlib
 import time
+import sys
+
+class Tracer:
+    """Handles getting coverage."""
+
+    def clear(self):
+        self.edges = defaultdict(set)
+
+    # TODO: actually do edge coverage by file;
+    # this is only blocks right now.
+    def _trace(self, frame, event, arg):
+        filename = frame.f_code.co_filename
+        if filename != 'fuzzer.py':
+            self.edges[filename].add(frame.f_lineno)
+        return self._trace
+
+    def start(self):
+        sys.settrace(self._trace)
+
+    def stop(self):
+        sys.settrace(None)
 
 class Fuzzer:
     """
@@ -18,6 +38,7 @@ class Fuzzer:
         self.corpus_dir = corpus_dir
         # filename -> edges
         self.edges = defaultdict(set)
+        self.tracer = Tracer()
         to_import = list(corpus_dir.iterdir())
         for path in to_import:
             self.import_testcase(path)
@@ -35,18 +56,16 @@ class Fuzzer:
     def test_one_input(self, data):
         # TODO: handle exceptions
         # TODO: reuse coverage object, clearing it
-        cov = coverage.Coverage(cover_pylib=self.cover_stdlib, branch=True)
-        cov.start()
+        self.tracer.clear()
+        self.tracer.start()
         self.target(data)
-        cov.stop()
-        cov_data = cov.get_data()
-        assert cov_data.has_arcs()
+        self.tracer.stop()
         has_new = False
-        for name in cov_data.measured_files():
-            arcs = set(cov_data.arcs(name))
-            if arcs - self.edges[name]:
+        for name, edges in self.tracer.edges.items():
+            edges = set(edges)
+            if edges - self.edges[name]:
                 has_new = True
-            self.edges[name] |= arcs
+            self.edges[name] |= edges
         if has_new:
             # TODO: shrink
             self.corpus.append(data)
@@ -133,15 +152,15 @@ class Fuzzer:
 
     def print_status(self, num_execs, start):
         elapsed = max(int(time.time() - start), 1)
-        exec_s = num_execs / elapsed
+        exec_s = num_execs // elapsed
         cov = sum(len(edges) for edges in self.edges.values())
-        print("PULSE #{} {} cov {} exec/s".format(num_execs, cov, exec_s))
+        print("#{} pulse {} cov {} exec/s".format(num_execs, cov, exec_s))
 
     def print_new(self, num_execs, start):
         elapsed = max(int(time.time() - start), 1)
-        exec_s = num_execs / elapsed
+        exec_s = num_execs // elapsed
         cov = sum(len(edges) for edges in self.edges.values())
-        print("NEW #{} {} cov {} exec/s".format(num_execs, cov, exec_s))
+        print("#{} NEW {} cov {} exec/s".format(num_execs, cov, exec_s))
 
     def fuzz(self):
         num_execs = 0
