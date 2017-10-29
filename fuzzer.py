@@ -4,6 +4,7 @@ from target import json_target
 from pathlib import Path
 from collections import defaultdict
 import random
+import string
 import hashlib
 import time
 import sys
@@ -136,8 +137,10 @@ class Fuzzer:
         data[idx] = self.get_random_byte()
         return data
 
-    # def mutate_change_bit(data):
-    #     pass
+    def mutate_change_bit(self, data):
+        idx = random.randrange(len(data))
+        data[idx] ^= 1 << random.randrange(8)
+        return data
 
     # def mutate_copy_part(self, data):
     #     pass
@@ -146,17 +149,43 @@ class Fuzzer:
     # auto dict
     # torc
 
-    # def mutate_change_ascii_integer(data):
-    #     pass
+    def mutate_change_ascii_integer(self, data):
+        start = random.randrange(len(data))
+        while start < len(data) and chr(data[start]) not in string.digits:
+            start += 1
+        if start == len(data):
+            return data
 
-    # def mutate_change_binary_integery(data):
+        end = start
+        while end < len(data) and chr(data[end]) in string.digits:
+            end += 1
+
+        value = int(data[start:end])
+        choice = random.randrange(5)
+        if choice == 0:
+            value += 1
+        elif choice == 1:
+            value -= 1
+        elif choice == 2:
+            value //= 2
+        elif choice == 3:
+            value *= 2
+        elif choice == 4:
+            value *= value
+            value = max(1, value)
+            value = random.randrange(value)
+        else:
+            assert False
+
+        to_insert = bytes(str(value), encoding='ascii')
+        data[start:end] = to_insert
+        return data
+
+    # def mutate_change_binary_integer(self, data):
     #     pass
 
     # def crossover(self, data):
     #     pass
-
-    def mutate(self, data):
-        pass
 
     def generate_input(self):
         assert self.corpus
@@ -165,15 +194,21 @@ class Fuzzer:
         for _ in range(num_mutations):
             if not data:
                 return bytes()
-            choice = random.randrange(3)
+            choice = random.randrange(5)
             if choice == 0:
                 data = self.mutate_erase_bytes(data)
             elif choice == 1:
                 data = self.mutate_insert_bytes(data)
             elif choice == 2:
                 data = self.mutate_change_byte(data)
-            # elif choice == 3:
+            elif choice == 3:
+                data = self.mutate_change_bit(data)
+            elif choice == 4:
+                data = self.mutate_change_ascii_integer(data)
+            # elif choice == 5:
             #     data = self.mutate_copy_part(data)
+            # elif choice == 5:
+            #     data = self.mutate_change_binary_integer(data)
             else:
                 assert False
         return bytes(data)
