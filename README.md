@@ -1,5 +1,5 @@
 # python-fuzz
-Coverage-guided fuzzing for Python
+Coverage-guided fuzzing for Python, ported from [LibFuzzer](https://llvm.org/docs/LibFuzzer.html)
 
 # Usage
 
