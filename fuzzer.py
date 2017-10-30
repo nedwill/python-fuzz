@@ -3,10 +3,12 @@ The main fuzzer code.
 """
 
 import hashlib
+import io
 import logging
 import random
 import string
 import time
+from byte_feedback import ByteFeedback, ByteIOFeedback
 from collections import defaultdict
 from pathlib import Path
 
@@ -47,6 +49,7 @@ class Fuzzer:
     The main fuzzer object.
     """
     def __init__(self, cover_stdlib, target, corpus_dir):
+        io.BytesIO = ByteIOFeedback
         self.cover_stdlib = cover_stdlib
         self.target = target
         self.corpus = []
@@ -86,7 +89,7 @@ class Fuzzer:
         if has_new:
             # TODO: shrink
             self.corpus.append(data)
-            self.write_to_disk(data)
+            self.write_to_disk(bytes(data))
         return has_new
         # print(cov_data.measured_files())
 
@@ -108,8 +111,12 @@ class Fuzzer:
         new_bytes = self.get_random_bytes(random.randrange(1, 5))
         return data[:idx] + new_bytes + data[idx:]
 
-    # def mutate_insert_repeated_bytes(data):
-    #     pass
+    def mutate_insert_repeated_bytes(self, data):
+        idx = random.randrange(len(data))
+        new_byte = self.get_random_byte()
+        sz = random.randrange(16)
+        data[idx:idx+sz] = bytearray(new_byte) * sz
+        return data
 
     @staticmethod
     def get_random_bytes(size):
@@ -182,7 +189,7 @@ class Fuzzer:
         for _ in range(num_mutations):
             if not data:
                 return bytes()
-            choice = random.randrange(5)
+            choice = random.randrange(6)
             if choice == 0:
                 data = self.mutate_erase_bytes(data)
             elif choice == 1:
@@ -193,13 +200,15 @@ class Fuzzer:
                 data = self.mutate_change_bit(data)
             elif choice == 4:
                 data = self.mutate_change_ascii_integer(data)
+            elif choice == 5:
+                data = self.mutate_insert_repeated_bytes(data)
             # elif choice == 5:
             #     data = self.mutate_copy_part(data)
             # elif choice == 5:
             #     data = self.mutate_change_binary_integer(data)
             else:
                 assert False
-        return bytes(data)
+        return bytes(data) # ByteFeedback(data)
 
     def print_status(self, info, num_execs, start):
         elapsed = max(int(time.time() - start), 1)
