@@ -1,13 +1,18 @@
-import coverage
+"""
+The main fuzzer code.
+"""
+
+import hashlib
 import logging
-from target import json_target
-from pathlib import Path
-from collections import defaultdict
 import random
 import string
-import hashlib
 import time
-import sys
+from collections import defaultdict
+from pathlib import Path
+
+import coverage
+from target import json_target
+
 
 class ShouldTrace:
     trace = True
@@ -36,23 +41,6 @@ class Tracer(coverage.PyTracer):
     @property
     def edges(self):
         return self.data
-
-#     def clear(self):
-#         self.edges = defaultdict(set)
-
-    # TODO: actually do edge coverage by file;
-    # this is only blocks right now.
-    # def _trace(self, frame, event, arg):
-    #     filename = frame.f_code.co_filename
-    #     if filename != 'fuzzer.py':
-    #         self.edges[filename].add(frame.f_lineno)
-    #     return self._trace
-
-    # def start(self):
-    #     sys.settrace(self._trace)
-
-    # def stop(self):
-    #     sys.settrace(None)
 
 class Fuzzer:
     """
