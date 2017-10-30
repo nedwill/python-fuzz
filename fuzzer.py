@@ -13,7 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import coverage
-from target import json_target
+from target import plist_target
 
 
 class ShouldTrace:
@@ -48,18 +48,20 @@ class Fuzzer:
     """
     The main fuzzer object.
     """
-    def __init__(self, cover_stdlib, target, corpus_dir):
-        io.BytesIO = ByteIOFeedback
-        self.cover_stdlib = cover_stdlib
+    def __init__(self, target, corpus_dir):
+        # io.BytesIO = ByteIOFeedback
         self.target = target
         self.corpus = []
         self.corpus_dir = corpus_dir
         # filename -> edges
         self.edges = defaultdict(set)
-        # self.cov = coverage.Coverage(cover_pylib=self.cover_stdlib, branch=True)
         to_import = list(corpus_dir.iterdir())
         for path in to_import:
-            self.import_testcase(path)
+            try:
+                self.import_testcase(path)
+            except Exception as exc:
+                print("{} crashes, please fix.".format(path))
+                raise exc
         if not to_import:
             self.test_one_input(b'A'*64)
         if not self.edges:
@@ -76,7 +78,11 @@ class Fuzzer:
         # TODO: reuse coverage object, clearing it
         tracer = Tracer()
         tracer.start()
-        self.target(data)
+        try:
+            self.target(data)
+        except Exception as exc:
+            self.write_crash_to_disk(data)
+            raise exc
         tracer.stop()
         has_new = False
         for name, edges in tracer.edges.items():
@@ -100,6 +106,13 @@ class Fuzzer:
         name = hashlib.sha1(data).hexdigest()
         dest = self.corpus_dir.joinpath(name)
         if not dest.exists():
+            dest.write_bytes(data)
+
+    def write_crash_to_disk(self, data):
+        name = 'crash-' + hashlib.sha1(data).hexdigest()
+        dest = self.corpus_dir.joinpath(name)
+        if not dest.exists():
+            print("Writing crash to {}...".format(dest))
             dest.write_bytes(data)
 
     def mutate_erase_bytes(self, data):
@@ -235,5 +248,5 @@ class Fuzzer:
             num_execs += 1
 
 if __name__ == '__main__':
-    fuzzer = Fuzzer(True, json_target, Path('./corpus'))
+    fuzzer = Fuzzer(plist_target, Path('./corpus'))
     fuzzer.fuzz()

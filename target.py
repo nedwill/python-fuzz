@@ -2,15 +2,13 @@ import plistlib
 import io
 import struct
 
-def json_target(data):
+def plist_target(data):
     if len(data) < 32:
         return
 
-    (
-        offset_size, _ref_size, num_objects, top_object,
-        offset_table_offset
-    ) = struct.unpack('>6xBBQQQ', data[-32:])
-    if num_objects > 16:
+    (offset_size, ref_size, num_objects, top_object,
+    offset_table_offset) = struct.unpack('>6xBBQQQ', data[-32:])
+    if num_objects > 16 or offset_size == 0 or ref_size == 0:
         return
 
     try:
