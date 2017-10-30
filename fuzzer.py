@@ -48,7 +48,7 @@ class Fuzzer:
     """
     The main fuzzer object.
     """
-    def __init__(self, target, corpus_dir):
+    def __init__(self, target, corpus_dir, shrinking=False):
         # io.BytesIO = ByteIOFeedback
         self.target = target
         self.corpus = []
@@ -56,33 +56,41 @@ class Fuzzer:
         # filename -> edges
         self.edges = defaultdict(set)
         to_import = list(corpus_dir.iterdir())
-        for path in to_import:
-            try:
-                self.import_testcase(path)
-            except Exception as exc:
-                print("{} crashes, please fix.".format(path))
-                raise exc
-        if not to_import:
-            self.test_one_input(b'A'*64)
-        if not self.edges:
-            logging.error("No coverage found! "
-                          "Does your target function do something?")
-            exit()
+        if not shrinking:
+            for path in to_import:
+                try:
+                    self.import_testcase(path)
+                except Exception as exc:
+                    print("{} crashes `{}`, please fix.".format(path, path.read_bytes()))
+                    raise exc
+            if not to_import:
+                self.test_one_input(b'A'*64)
+            if not self.edges:
+                logging.error("No coverage found! "
+                            "Does your target function do something?")
+                exit()
 
-    def import_testcase(self, path):
+    def import_testcase(self, path, shrinking=False):
         testcase = path.read_bytes()
-        self.test_one_input(testcase)
+        self.test_one_input(testcase, shrinking=shrinking)
 
-    def test_one_input(self, data):
-        # TODO: handle exceptions
-        # TODO: reuse coverage object, clearing it
+    @property
+    def smallest_input(self):
+        assert self.corpus
+        return min(len(e) for e in self.corpus)
+
+    def test_one_input(self, data, shrinking=False):
         tracer = Tracer()
         tracer.start()
+        crashed = False
         try:
             self.target(data)
         except Exception as exc:
-            self.write_crash_to_disk(data)
-            raise exc
+            # TODO: when shrinking check exception matches?
+            crashed = True
+            if not shrinking:
+                self.write_crash_to_disk(data)
+                raise exc
         tracer.stop()
         has_new = False
         for name, edges in tracer.edges.items():
@@ -92,11 +100,18 @@ class Fuzzer:
             if edges - self.edges[name]:
                 has_new = True
             self.edges[name] |= edges
-        if has_new:
-            # TODO: shrink
+        if shrinking and not crashed:
+            return False
+        if has_new or (shrinking and (not self.corpus or len(data) < min(len(e) for e in self.corpus))):
+            # if self.corpus:
+                # print(len(data), min(len(e) for e in self.corpus))
             self.corpus.append(data)
-            self.write_to_disk(bytes(data))
-        return has_new
+            dest = self.write_to_disk(bytes(data))
+            if shrinking:
+                assert crashed
+                print("Wrote crasher: {} @ {}".format(len(data), dest))
+            return True
+        return False
         # print(cov_data.measured_files())
 
     # def mutate_shuffle(data):
@@ -107,6 +122,7 @@ class Fuzzer:
         dest = self.corpus_dir.joinpath(name)
         if not dest.exists():
             dest.write_bytes(data)
+        return dest
 
     def write_crash_to_disk(self, data):
         name = 'crash-' + hashlib.sha1(data).hexdigest()
@@ -223,30 +239,38 @@ class Fuzzer:
                 assert False
         return bytes(data) # ByteFeedback(data)
 
-    def print_status(self, info, num_execs, start):
+    def print_status(self, info, num_execs, start, shrinking=False):
         elapsed = max(int(time.time() - start), 1)
         exec_s = num_execs // elapsed
-        cov = sum(len(edges) for edges in self.edges.values())
+        if shrinking:
+            cov = min(len(e) for e in self.corpus)
+        else:
+            cov = sum(len(edges) for edges in self.edges.values())
         print("#{} {} cov: {} corpus: {} exec/s: {}".format(num_execs, info, cov, len(self.corpus), exec_s))
 
-    def print_pulse(self, num_execs, start):
-        self.print_status("pulse", num_execs, start)
+    def print_pulse(self, num_execs, start, shrinking=False):
+        self.print_status("pulse", num_execs, start, shrinking=shrinking)
 
-    def print_new(self, num_execs, start):
-        self.print_status("NEW", num_execs, start)
+    def print_new(self, num_execs, start, shrinking=False):
+        self.print_status("NEW", num_execs, start, shrinking=shrinking)
 
-    def fuzz(self):
+    def fuzz(self, shrinking=False):
         num_execs = 0
         start = time.time()
         while True:
             data = self.generate_input()
-            has_new = self.test_one_input(data)
+            has_new = self.test_one_input(data, shrinking=shrinking)
             if has_new:
-                self.print_new(num_execs, start)
+                self.print_new(num_execs, start, shrinking=shrinking)
             elif bin(num_execs).count("1") == 1:
-                self.print_pulse(num_execs, start)
+                self.print_pulse(num_execs, start, shrinking=shrinking)
             num_execs += 1
+
+    def minimize(self, path):
+        self.import_testcase(path, shrinking=True)
+        self.fuzz(shrinking=True)
 
 if __name__ == '__main__':
     fuzzer = Fuzzer(plist_target, Path('./corpus'))
     fuzzer.fuzz()
+    # fuzzer.minimize(Path('corpus/crash-a51a56f8dc7dffdd8ff6b5c21bf5cfe8c6134724'))
