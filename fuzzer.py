@@ -22,6 +22,7 @@ class ShouldTrace:
     def __init__(self, filename):
         self.source_filename = filename
 
+
 # CTracer ?
 class Tracer(coverage.PyTracer):
     """Handles getting coverage."""
@@ -29,12 +30,14 @@ class Tracer(coverage.PyTracer):
     def __init__(self):
         super().__init__()
         self.trace_arcs = True
+
         # TODO: see how coverage.py does this
         def should_trace(filename, frame):
             res = ShouldTrace(filename)
             if filename == 'fuzzer.py':
                 res.trace = False
             return res
+
         self.data = {}
         self.trace = None
         self.should_trace = should_trace
@@ -44,10 +47,12 @@ class Tracer(coverage.PyTracer):
     def edges(self):
         return self.data
 
+
 class Fuzzer:
     """
     The main fuzzer object.
     """
+
     def __init__(self, target, corpus_dir, shrinking=False):
         # io.BytesIO = ByteIOFeedback
         self.target = target
@@ -61,13 +66,14 @@ class Fuzzer:
                 try:
                     self.import_testcase(path)
                 except Exception as exc:
-                    print("{} crashes `{}`, please fix.".format(path, path.read_bytes()))
+                    print("{} crashes `{}`, please fix.".format(
+                        path, path.read_bytes()))
                     raise exc
             if not to_import:
-                self.test_one_input(b'A'*64)
+                self.test_one_input(b'A' * 64)
             if not self.edges:
                 logging.error("No coverage found! "
-                            "Does your target function do something?")
+                              "Does your target function do something?")
                 exit()
 
     def import_testcase(self, path, shrinking=False):
@@ -102,9 +108,11 @@ class Fuzzer:
             self.edges[name] |= edges
         if shrinking and not crashed:
             return False
-        if has_new or (shrinking and (not self.corpus or len(data) < min(len(e) for e in self.corpus))):
+        if has_new or (shrinking and (not self.corpus or
+                                      len(data) < min(len(e)
+                                                      for e in self.corpus))):
             # if self.corpus:
-                # print(len(data), min(len(e) for e in self.corpus))
+            # print(len(data), min(len(e) for e in self.corpus))
             self.corpus.append(data)
             dest = self.write_to_disk(bytes(data))
             if shrinking:
@@ -114,8 +122,8 @@ class Fuzzer:
         return False
         # print(cov_data.measured_files())
 
-    # def mutate_shuffle(data):
-    #     pass
+        # def mutate_shuffle(data):
+        #     pass
 
     def write_to_disk(self, data):
         name = hashlib.sha1(data).hexdigest()
@@ -144,7 +152,7 @@ class Fuzzer:
         idx = random.randrange(len(data))
         new_byte = self.get_random_byte()
         sz = random.randrange(16)
-        data[idx:idx+sz] = bytearray(new_byte) * sz
+        data[idx:idx + sz] = bytearray(new_byte) * sz
         return data
 
     @staticmethod
@@ -237,7 +245,7 @@ class Fuzzer:
             #     data = self.mutate_change_binary_integer(data)
             else:
                 assert False
-        return bytes(data) # ByteFeedback(data)
+        return bytes(data)  # ByteFeedback(data)
 
     def print_status(self, info, num_execs, start, shrinking=False):
         elapsed = max(int(time.time() - start), 1)
@@ -246,7 +254,8 @@ class Fuzzer:
             cov = min(len(e) for e in self.corpus)
         else:
             cov = sum(len(edges) for edges in self.edges.values())
-        print("#{} {} cov: {} corpus: {} exec/s: {}".format(num_execs, info, cov, len(self.corpus), exec_s))
+        print("#{} {} cov: {} corpus: {} exec/s: {}".format(
+            num_execs, info, cov, len(self.corpus), exec_s))
 
     def print_pulse(self, num_execs, start, shrinking=False):
         self.print_status("pulse", num_execs, start, shrinking=shrinking)
@@ -269,6 +278,7 @@ class Fuzzer:
     def minimize(self, path):
         self.import_testcase(path, shrinking=True)
         self.fuzz(shrinking=True)
+
 
 if __name__ == '__main__':
     fuzzer = Fuzzer(plist_target, Path('./corpus'))
