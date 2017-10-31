@@ -3,12 +3,11 @@ The main fuzzer code.
 """
 
 import hashlib
-import io
 import logging
 import random
 import string
 import time
-from byte_feedback import ByteFeedback, ByteIOFeedback
+# from byte_feedback import ByteFeedback, ByteIOFeedback
 from collections import defaultdict
 from pathlib import Path
 
