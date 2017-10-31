@@ -86,12 +86,12 @@ class Fuzzer:
     def get_edges_from_input(self, data):
         tracer = Tracer()
         tracer.start()
-        crashed = False
+        crashed = None
         try:
             self.target(data)
         except Exception as exc:
             # TODO: when shrinking check exception matches?
-            crashed = True
+            crashed = exc
             self.write_crash_to_disk(data)
             raise exc
         tracer.stop()
@@ -264,8 +264,12 @@ class Fuzzer:
                 self.print_pulse(num_execs, start)
             num_execs += 1
 
-    def minimize(self, path):
-        self.import_testcase(path)
+    def minimize(self, data):
+        # TODO: minimize using a few simple strategies
+        edges, crashed = self.get_edges_from_input(data)
+        # TODO: if it crashed, minimize while maintaining same
+        # exception type. otherwise, maintain edge coverage
+        # TODO: pipe tests through here before writing to disk
 
 
 if __name__ == '__main__':
